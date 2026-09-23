@@ -5,7 +5,7 @@ declare global {
         puter: {
             auth: {
                 getUser: () => Promise<PuterUser>;
-                isSignedIn: () => Promise<boolean>;
+                isSignedIn: () => boolean; // <-- synchronous, Promise nahi
                 signIn: () => Promise<void>;
                 signOut: () => Promise<void>;
             };
@@ -126,7 +126,8 @@ export const usePuterStore = create<PuterStore>((set, get) => {
         set({ isLoading: true, error: null });
 
         try {
-            const isSignedIn = await puter.auth.isSignedIn();
+            const isSignedIn = puter.auth.isSignedIn(); // <-- await HATA DIYA
+
             if (isSignedIn) {
                 const user = await puter.auth.getUser();
                 set({
@@ -321,7 +322,6 @@ export const usePuterStore = create<PuterStore>((set, get) => {
             setError("Puter.js not available");
             return;
         }
-        // return puter.ai.chat(prompt, imageURL, testMode, options);
         return puter.ai.chat(prompt, imageURL, testMode, options) as Promise<
             AIResponse | undefined
         >;
@@ -350,7 +350,7 @@ export const usePuterStore = create<PuterStore>((set, get) => {
                     ],
                 },
             ],
-            { model: "claude-sonnet-4" }
+            { model: "gpt-5.4-nano" }
         ) as Promise<AIResponse | undefined>;
     };
 

@@ -16,6 +16,7 @@ export function meta({}: Route.MetaArgs) {
 export default function Home() {
     const { auth } = usePuterStore();
     const navigate = useNavigate();
+
     useEffect(() => {
         if(!auth.isAuthenticated) navigate('/auth?next=/');
     }, [auth.isAuthenticated]);
