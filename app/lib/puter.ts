@@ -5,7 +5,7 @@ declare global {
         puter: {
             auth: {
                 getUser: () => Promise<PuterUser>;
-                isSignedIn: () => boolean; // <-- synchronous, Promise nahi
+                isSignedIn: () => boolean;
                 signIn: () => Promise<void>;
                 signOut: () => Promise<void>;
             };
@@ -126,7 +126,7 @@ export const usePuterStore = create<PuterStore>((set, get) => {
         set({ isLoading: true, error: null });
 
         try {
-            const isSignedIn = puter.auth.isSignedIn(); // <-- await HATA DIYA
+            const isSignedIn = puter.auth.isSignedIn();
 
             if (isSignedIn) {
                 const user = await puter.auth.getUser();
@@ -327,31 +327,56 @@ export const usePuterStore = create<PuterStore>((set, get) => {
         >;
     };
 
-    const feedback = async (path: string, message: string) => {
+    // ✅ FINAL FIX: img2txt approach — file attachment hang issue khatam
+    const feedback = async (imagePath: string, message: string) => {
         const puter = getPuter();
         if (!puter) {
             setError("Puter.js not available");
             return;
         }
 
-        return puter.ai.chat(
-            [
-                {
-                    role: "user",
-                    content: [
-                        {
-                            type: "file",
-                            puter_path: path,
-                        },
-                        {
-                            type: "text",
-                            text: message,
-                        },
-                    ],
-                },
-            ],
-            { model: "gpt-5.4-nano" }
-        ) as Promise<AIResponse | undefined>;
+        try {
+            console.log("📄 Reading image from Puter FS:", imagePath);
+            const imageBlob = await puter.fs.read(imagePath);
+
+            if (!imageBlob) {
+                throw new Error("Could not read image from Puter FS");
+            }
+
+            console.log("✅ Image read, size:", imageBlob.size);
+
+            // Step 1: Image ko text mein convert karo
+            console.log("🔍 Extracting text from image (img2txt)...");
+            const resumeText = await puter.ai.img2txt(imageBlob);
+
+            console.log("✅ Text extracted, length:", resumeText?.length);
+            console.log("RESUME TEXT (first 500 chars):", resumeText?.substring(0, 500));
+
+            if (!resumeText) {
+                throw new Error("Could not extract text from image");
+            }
+
+            // Step 2: Text + instructions AI ko bhejo
+            console.log("📤 Sending text to AI...");
+            const fullPrompt = `${message}
+
+Here is the resume content extracted from the image:
+
+${resumeText}
+
+Please analyze this resume and provide feedback in the specified JSON format. Return ONLY the JSON object, no other text, no backticks, no explanations.`;
+
+            const result = await puter.ai.chat(fullPrompt, {
+                model: "gpt-5.4-nano",
+            });
+
+            console.log("✅ AI response received");
+            return result as AIResponse | undefined;
+
+        } catch (err) {
+            console.error("❌ Feedback function error:", err);
+            throw err;
+        }
     };
 
     const img2txt = async (image: string | File | Blob, testMode?: boolean) => {
