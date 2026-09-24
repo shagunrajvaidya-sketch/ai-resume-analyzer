@@ -64,3 +64,4 @@ const ATS: React.FC<ATSProps> = ({ score, suggestions }) => {
         </div>
     )
 }
+export default ATS;

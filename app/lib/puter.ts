@@ -327,7 +327,6 @@ export const usePuterStore = create<PuterStore>((set, get) => {
         >;
     };
 
-    // ✅ FINAL FIX: img2txt approach — file attachment hang issue khatam
     const feedback = async (imagePath: string, message: string) => {
         const puter = getPuter();
         if (!puter) {
@@ -336,45 +335,67 @@ export const usePuterStore = create<PuterStore>((set, get) => {
         }
 
         try {
-            console.log("📄 Reading image from Puter FS:", imagePath);
+            console.log("📄 Reading image:", imagePath);
             const imageBlob = await puter.fs.read(imagePath);
+            if (!imageBlob) throw new Error("Could not read image");
 
-            if (!imageBlob) {
-                throw new Error("Could not read image from Puter FS");
-            }
-
-            console.log("✅ Image read, size:", imageBlob.size);
-
-            // Step 1: Image ko text mein convert karo
-            console.log("🔍 Extracting text from image (img2txt)...");
+            console.log("🔍 Extracting text...");
             const resumeText = await puter.ai.img2txt(imageBlob);
+            if (!resumeText) throw new Error("Could not extract text");
 
-            console.log("✅ Text extracted, length:", resumeText?.length);
-            console.log("RESUME TEXT (first 500 chars):", resumeText?.substring(0, 500));
+            console.log("✅ Text extracted, length:", resumeText.length);
 
-            if (!resumeText) {
-                throw new Error("Could not extract text from image");
+            const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+            if (!apiKey) throw new Error("Groq key missing in .env");
+
+            console.log("📤 Sending to Groq...");
+
+            const response = await fetch(
+                "https://api.groq.com/openai/v1/chat/completions",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${apiKey}`,
+                    },
+                    body: JSON.stringify({
+                        model: "openai/gpt-oss-120b",
+                        messages: [
+                            {
+                                role: "user",
+                                content: `${message}\n\nResume content:\n${resumeText}\n\nReturn ONLY a valid JSON object. No backticks, no extra text.`,
+                            },
+                        ],
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                const err = await response.text();
+                console.error("❌ Groq error:", err);
+                throw new Error(`Groq error: ${response.status}`);
             }
 
-            // Step 2: Text + instructions AI ko bhejo
-            console.log("📤 Sending text to AI...");
-            const fullPrompt = `${message}
+            const data = await response.json();
+            const content = data.choices[0].message.content;
+            console.log("✅ Response received");
 
-Here is the resume content extracted from the image:
-
-${resumeText}
-
-Please analyze this resume and provide feedback in the specified JSON format. Return ONLY the JSON object, no other text, no backticks, no explanations.`;
-
-            const result = await puter.ai.chat(fullPrompt, {
-                model: "gpt-5.4-nano",
-            });
-
-            console.log("✅ AI response received");
-            return result as AIResponse | undefined;
+            return {
+                index: 0,
+                message: {
+                    role: "assistant",
+                    content: content,
+                    refusal: null,
+                    annotations: [],
+                },
+                logprobs: null,
+                finish_reason: "stop",
+                usage: [],
+                via_ai_chat_service: false,
+            } as AIResponse;
 
         } catch (err) {
-            console.error("❌ Feedback function error:", err);
+            console.error("❌ Feedback error:", err);
             throw err;
         }
     };
